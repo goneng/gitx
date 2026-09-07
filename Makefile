@@ -62,6 +62,10 @@ RESULT_BUNDLE_ARG := $(if $(RESULT_BUNDLE),-resultBundlePath $(RESULT_BUNDLE))
 
 XCODEBUILD := xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) ARCHS="$(ARCH)"
 
+# The tests sign ad-hoc, so they drop the hardened runtime too: a Dev.xcconfig
+# turns it on, and it refuses to map an ad-hoc signed framework into the host.
+TEST_SETTINGS := CODE_SIGN_IDENTITY="-" ENABLE_HARDENED_RUNTIME=NO
+
 .PHONY: help git-submodule-sync deps pre-build bootstrap build unit-test test \
 	ui-test all-tests archive build-project app run dmg package-signed \
 	dmg-signed clean git-clean-dry-run
@@ -93,20 +97,20 @@ build: ## Build the app for local use
 
 unit-test: ## Run the unit tests, needing no signing, repo or network
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
-		-only-testing:GitXTests CODE_SIGN_IDENTITY="-" test
+		-only-testing:GitXTests $(TEST_SETTINGS) test
 
 test: unit-test
 
 ui-test: ## Run the UI tests that drive the app and take the screenshots
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
-		-only-testing:GitXUITests CODE_SIGN_IDENTITY="-" \
+		-only-testing:GitXUITests $(TEST_SETTINGS) \
 		GITX_SCREENSHOT_REPO="$(GITX_SCREENSHOT_REPO)" $(RESULT_BUNDLE_ARG) test
 
 # Runs the unit tests a second time, since the scheme tests every target. That
 # is what CI's "Run tests" step does today, and this target exists to match it.
 all-tests: ## Run every test target in the scheme, screenshots included
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
-		CODE_SIGN_IDENTITY="-" \
+		$(TEST_SETTINGS) \
 		GITX_SCREENSHOT_REPO="$(GITX_SCREENSHOT_REPO)" $(RESULT_BUNDLE_ARG) test
 
 archive: ## Build a release GitX.xcarchive, which the dmg targets export from
