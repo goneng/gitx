@@ -67,7 +67,8 @@ XCODEBUILD := xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) ARCHS="$(ARCH
 TEST_SETTINGS := CODE_SIGN_IDENTITY="-" ENABLE_HARDENED_RUNTIME=NO
 
 .PHONY: help git-submodule-sync deps pre-build bootstrap build unit-test test \
-	ui-test all-tests archive build-project app run dmg package-signed \
+	ui-test all-tests archive build-project app smoke-test run dmg \
+	package-signed \
 	dmg-signed clean git-clean-dry-run
 
 help: ## Show this help
@@ -121,6 +122,21 @@ build-project: archive
 app: archive ## Copy the app out of the archive to build/GitX.app
 	rm -rf $(APP)
 	cp -R $(ARCHIVE)/Products/Applications/GitX.app $(APP)
+
+# Covers what no test does: the Release build turns the hardened runtime on,
+# and library validation then refuses to map a framework whose team differs
+# from the tool loading it. Reads the output rather than the exit status,
+# since gitx exits 1 after printing its version, while a bundle it cannot
+# load dies in dyld before main and prints nothing. Wants the real identity
+# `archive` builds with, so an ad-hoc archive proves nothing here.
+#
+# The guard keeps that from passing silently: asking for `dmg` in the same
+# invocation turns the hardened runtime off for the archive they share, and
+# without it library validation never runs and the check proves nothing.
+smoke-test: app ## Check the packaged gitx tool can load the app frameworks
+	@codesign -dv --verbose=2 "$(APP)" 2>&1 | grep -q "flags=.*runtime" \
+		|| { echo "$(APP) carries no hardened runtime; run smoke-test on its own"; exit 1; }
+	"$(APP)/Contents/Resources/gitx" --version | grep -q "GitX version"
 
 # Runs the Debug build, not the archive: Release turns on the hardened runtime,
 # and an ad-hoc signature plus the hardened runtime leaves the app unable to
