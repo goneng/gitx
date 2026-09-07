@@ -67,13 +67,19 @@ XCODEBUILD := xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) ARCHS="$(ARCH
 TEST_SETTINGS := CODE_SIGN_IDENTITY="-" ENABLE_HARDENED_RUNTIME=NO
 
 .PHONY: help git-submodule-sync deps pre-build bootstrap build unit-test test \
-	ui-test all-tests archive build-project app smoke-test run dmg \
+	ui-test all-tests archive build-project app smoke-test run dmg map \
 	package-signed \
 	dmg-signed clean git-clean-dry-run
 
 help: ## Show this help
 	@grep -hE '^[A-Za-z][A-Za-z.-]*:.*## ' $(MAKEFILE_LIST) \
 		| awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
+
+# Reads the edges out of make's own rule database, so a target that gains a
+# prerequisite appears here without anyone maintaining a second copy of the
+# graph. The descriptions it prints alongside are the help text above.
+map: ## Show which targets pull in which, from make's own rule database
+	@scripts/make-target-map.sh
 
 # A real file, not a phony target, so that make leaves an existing config
 # alone rather than writing over settings you may have edited by hand.
