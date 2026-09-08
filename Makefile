@@ -62,13 +62,24 @@ RESULT_BUNDLE_ARG := $(if $(RESULT_BUNDLE),-resultBundlePath $(RESULT_BUNDLE))
 
 XCODEBUILD := xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) ARCHS="$(ARCH)"
 
+# The tests sign ad-hoc, so they drop the hardened runtime too: a Dev.xcconfig
+# turns it on, and it refuses to map an ad-hoc signed framework into the host.
+TEST_SETTINGS := CODE_SIGN_IDENTITY="-" ENABLE_HARDENED_RUNTIME=NO
+
 .PHONY: help git-submodule-sync deps pre-build bootstrap build unit-test test \
-	ui-test all-tests archive build-project app run dmg package-signed \
+	ui-test all-tests archive build-project app smoke-test run dmg map \
+	package-signed \
 	dmg-signed clean git-clean-dry-run
 
 help: ## Show this help
 	@grep -hE '^[A-Za-z][A-Za-z.-]*:.*## ' $(MAKEFILE_LIST) \
 		| awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
+
+# Reads the edges out of make's own rule database, so a target that gains a
+# prerequisite appears here without anyone maintaining a second copy of the
+# graph. The descriptions it prints alongside are the help text above.
+map: ## Show which targets pull in which, from make's own rule database
+	@scripts/make-target-map.sh
 
 # A real file, not a phony target, so that make leaves an existing config
 # alone rather than writing over settings you may have edited by hand.
@@ -93,20 +104,20 @@ build: ## Build the app for local use
 
 unit-test: ## Run the unit tests, needing no signing, repo or network
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
-		-only-testing:GitXTests CODE_SIGN_IDENTITY="-" test
+		-only-testing:GitXTests $(TEST_SETTINGS) test
 
 test: unit-test
 
 ui-test: ## Run the UI tests that drive the app and take the screenshots
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
-		-only-testing:GitXUITests CODE_SIGN_IDENTITY="-" \
+		-only-testing:GitXUITests $(TEST_SETTINGS) \
 		GITX_SCREENSHOT_REPO="$(GITX_SCREENSHOT_REPO)" $(RESULT_BUNDLE_ARG) test
 
 # Runs the unit tests a second time, since the scheme tests every target. That
 # is what CI's "Run tests" step does today, and this target exists to match it.
 all-tests: ## Run every test target in the scheme, screenshots included
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
-		CODE_SIGN_IDENTITY="-" \
+		$(TEST_SETTINGS) \
 		GITX_SCREENSHOT_REPO="$(GITX_SCREENSHOT_REPO)" $(RESULT_BUNDLE_ARG) test
 
 archive: ## Build a release GitX.xcarchive, which the dmg targets export from
@@ -117,6 +128,21 @@ build-project: archive
 app: archive ## Copy the app out of the archive to build/GitX.app
 	rm -rf $(APP)
 	cp -R $(ARCHIVE)/Products/Applications/GitX.app $(APP)
+
+# Covers what no test does: the Release build turns the hardened runtime on,
+# and library validation then refuses to map a framework whose team differs
+# from the tool loading it. Reads the output rather than the exit status,
+# since gitx exits 1 after printing its version, while a bundle it cannot
+# load dies in dyld before main and prints nothing. Wants the real identity
+# `archive` builds with, so an ad-hoc archive proves nothing here.
+#
+# The guard keeps that from passing silently: asking for `dmg` in the same
+# invocation turns the hardened runtime off for the archive they share, and
+# without it library validation never runs and the check proves nothing.
+smoke-test: app ## Check the packaged gitx tool can load the app frameworks
+	@codesign -dv --verbose=2 "$(APP)" 2>&1 | grep -q "flags=.*runtime" \
+		|| { echo "$(APP) carries no hardened runtime; run smoke-test on its own"; exit 1; }
+	"$(APP)/Contents/Resources/gitx" --version | grep -q "GitX version"
 
 # Runs the Debug build, not the archive: Release turns on the hardened runtime,
 # and an ad-hoc signature plus the hardened runtime leaves the app unable to
