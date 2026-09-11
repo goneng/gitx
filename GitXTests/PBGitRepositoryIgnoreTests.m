@@ -21,6 +21,21 @@
 
 @end
 
+// Stands in for anything that can raise while the .gitignore is written.
+@interface PBThrowingIgnoreRepository : PBIgnoreStubRepository
+@end
+
+@implementation PBThrowingIgnoreRepository
+
+- (NSString *)gitIgnoreFilename
+{
+	[NSException raise:NSInternalInconsistencyException format:@"no working directory to write into"];
+
+	return nil;
+}
+
+@end
+
 @interface PBGitRepositoryIgnoreTests : XCTestCase
 @property (nonatomic, strong) PBIgnoreStubRepository *repository;
 @property (nonatomic, strong) NSURL *directory;
@@ -97,6 +112,15 @@
 	XCTAssertTrue([self ignore:@[ @"f1" ]]);
 
 	XCTAssertEqualObjects([self ignoreFileContents], @"f1");
+}
+
+- (void)testAFailureIsReportedRatherThanRaised
+{
+	PBThrowingIgnoreRepository *repository = [[PBThrowingIgnoreRepository alloc] init];
+	NSError *error = nil;
+
+	XCTAssertFalse([repository ignoreFilePaths:@[ @"f1" ] error:&error]);
+	XCTAssertNotNil(error, @"the caller has an error sheet to show, if it is handed an error");
 }
 
 - (void)testEverySelectedFileGetsItsOwnLine
