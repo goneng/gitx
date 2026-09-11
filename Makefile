@@ -5,9 +5,9 @@
 # Changing a command here means changing it there too, and the other way round.
 #
 #   deps           "pre build"
-#   unit-test      "Run unit tests"     (alias: test)
+#   unit-test      "Run unit tests"
 #   all-tests      "Run tests"
-#   archive        "Build project"      (alias: build-project)
+#   archive        "Build project"
 #   package-signed "Prepare artifact"
 #
 # `pre-build` is `deps` plus the submodule checkout that CI gets from its own
@@ -62,6 +62,11 @@ RESULT_BUNDLE_ARG := $(if $(RESULT_BUNDLE),-resultBundlePath $(RESULT_BUNDLE))
 
 XCODEBUILD := xcodebuild -workspace $(WORKSPACE) -scheme $(SCHEME) ARCHS="$(ARCH)"
 
+MAKEFILE := $(firstword $(MAKEFILE_LIST))
+
+# Column the map target lines its descriptions up in.
+MAP_WIDTH := 24
+
 # The tests sign ad-hoc, so they drop the hardened runtime too: a Dev.xcconfig
 # turns it on, and it refuses to map an ad-hoc signed framework into the host.
 TEST_SETTINGS := CODE_SIGN_IDENTITY="-" ENABLE_HARDENED_RUNTIME=NO
@@ -77,9 +82,31 @@ help: ## Show this help
 
 # Reads the edges out of make's own rule database, so a target that gains a
 # prerequisite appears here without anyone maintaining a second copy of the
-# graph. The descriptions it prints alongside are the help text above.
-map: ## Show which targets pull in which, from make's own rule database
-	@scripts/make-target-map.sh
+# graph. The descriptions alongside are the help text above, in a column.
+map: ## Show which targets pull in which, with the help text
+	@{ make -pnr -f $(MAKEFILE) 2>/dev/null \
+	   | sed -n 's/^\([a-zA-Z][A-Za-z0-9_.-]*\):\([^=]*\)$$/EDGE \1\2/p' \
+	   | grep -v '^EDGE $(MAKEFILE)' | sort -u; \
+	   sed -n 's/^\([a-zA-Z][A-Za-z0-9_.-]*\):.*## \(.*\)$$/DESC \1 \2/p' $(MAKEFILE_LIST); } \
+	| awk -v width=$(MAP_WIDTH) '$$1 == "EDGE" { target = $$2; $$1 = ""; $$2 = ""; sub(/^ +/, ""); prerequisites[target] = $$0; order[++found] = target; next } \
+	       $$1 == "DESC" { target = $$2; $$1 = ""; $$2 = ""; sub(/^ +/, ""); description[target] = $$0; next } \
+	       function label(indent, name,   left) { \
+	           left = indent name; \
+	           return (name in description ? sprintf("%-" width "s - %s", left, description[name]) : left) \
+	       } \
+	       function walk(name, indent,   i, count, needs) { \
+	           count = split(prerequisites[name], needs, " "); \
+	           for (i = 1; i <= count; i++) { print label(indent "\\_ ", needs[i]); walk(needs[i], indent "   ") } \
+	       } \
+	       END { \
+	           if (found == 0) exit 1; \
+	           print "Make Targets Map _______________________________________________________________"; print ""; \
+	           print "Targets that pull something in _________"; print ""; \
+	           for (i = 1; i <= found; i++) if (prerequisites[order[i]] != "") { print label("", order[i]); walk(order[i], ""); print "" } \
+	           print "Targets that stand alone _______________"; print ""; \
+	           for (i = 1; i <= found; i++) if (prerequisites[order[i]] == "") print label("", order[i]) \
+	       }' \
+	|| { echo "map: no targets found in $(MAKEFILE)" >&2; exit 1; }
 
 # A real file, not a phony target, so that make leaves an existing config
 # alone rather than writing over settings you may have edited by hand.
@@ -97,7 +124,7 @@ deps: ## Build the objective-git and libgit2 dependencies
 # a fresh local clone needs both halves.
 pre-build: git-submodule-sync deps ## Check out the submodules, then build the dependencies
 
-bootstrap: pre-build
+bootstrap: pre-build ## (alias)
 
 build: ## Build the app for local use
 	$(XCODEBUILD) -destination "$(DESTINATION)" build
@@ -106,7 +133,7 @@ unit-test: ## Run the unit tests, needing no signing, repo or network
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
 		-only-testing:GitXTests $(TEST_SETTINGS) test
 
-test: unit-test
+test: unit-test ## (alias)
 
 ui-test: ## Run the UI tests that drive the app and take the screenshots
 	$(XCODEBUILD) -destination "$(DESTINATION)" \
@@ -123,7 +150,7 @@ all-tests: ## Run every test target in the scheme, screenshots included
 archive: ## Build a release GitX.xcarchive, which the dmg targets export from
 	$(XCODEBUILD) -archivePath $(ARCHIVE) $(ARCHIVE_SETTINGS) archive
 
-build-project: archive
+build-project: archive ## (alias)
 
 app: archive ## Copy the app out of the archive to build/GitX.app
 	rm -rf $(APP)
