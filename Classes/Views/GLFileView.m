@@ -12,6 +12,7 @@
 #import "PBGitTree.h"
 #import "PBGitCommit.h"
 #import "PBGitHistoryController.h"
+#import "PBGitRepository.h"
 
 
 #define GROUP_LABEL @"Label"				  // string
@@ -25,7 +26,9 @@
 #define GROUP_ID_BLAME @"blame"
 #define GROUP_ID_LOG @"log"
 
-@interface GLFileView ()
+@interface GLFileView () {
+	NSString *shownFileKey;
+}
 
 - (void)saveSplitViewPosition;
 
@@ -73,11 +76,20 @@
 	[self performSelector:@selector(restoreSplitViewPositiion) withObject:nil afterDelay:0];
 }
 
+- (NSString *)keyForFile:(PBGitTree *)file
+{
+	return [NSString stringWithFormat:@"%@ %@ %@ %@", startFile, file.sha, file.fullPath, historyController.repository.headOID.SHA];
+}
+
 - (void)showFile
 {
 	NSArray *files = [historyController.treeController selectedObjects];
 	if ([files count] > 0) {
 		PBGitTree *file = [files objectAtIndex:0];
+
+		NSString *fileKey = [self keyForFile:file];
+		if ([fileKey isEqualToString:shownFileKey])
+			return;
 
 		NSString *fileTxt = @"";
 		if ([startFile isEqualToString:GROUP_ID_FILEVIEW])
@@ -90,6 +102,8 @@
 		id script = self.view.windowScriptObject;
 		NSString *filePath = [file fullPath];
 		[script callWebScriptMethod:@"showFile" withArguments:[NSArray arrayWithObjects:fileTxt, filePath, nil]];
+
+		shownFileKey = fileKey;
 	}
 
 #if 0
@@ -162,6 +176,7 @@
 
 - (void)didLoad
 {
+	shownFileKey = nil;
 	[self showFile];
 }
 
