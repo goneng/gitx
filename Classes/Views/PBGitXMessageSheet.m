@@ -79,20 +79,22 @@
 
 	NSError *taskError = error.userInfo[NSUnderlyingErrorKey];
 	if (taskError && taskError.domain == PBTaskErrorDomain) {
-		[messageParts addObject:NSLocalizedString(@"The underlying task failed:", @"PBGitXMessageSheet - task failed header")];
-		[messageParts addObject:taskError.localizedDescription];
-		[messageParts addObject:taskError.localizedFailureReason];
+		NSMutableArray *taskFailureLines = [NSMutableArray array];
+		[taskFailureLines addObject:NSLocalizedString(@"The underlying task failed:", @"PBGitXMessageSheet - task failed header")];
+		[taskFailureLines addObject:taskError.localizedDescription];
+		[taskFailureLines addObject:taskError.localizedFailureReason];
 		if (taskError.code == PBTaskNonZeroExitCodeError) {
 			NSString *message = NSLocalizedString(@"Return code: %@", @"PBGitXMessageSheet - task return code header");
 			message = [NSString stringWithFormat:message, taskError.userInfo[PBTaskTerminationStatusKey]];
-			[messageParts addObject:message];
-			message = NSLocalizedString(@"Output:", @"PBGitXMessageSheet - task output header");
+			[taskFailureLines addObject:message];
+		}
+		[messageParts addObject:[taskFailureLines componentsJoinedByString:@"\n"]];
+
+		if (taskError.code == PBTaskNonZeroExitCodeError) {
+			NSString *message = NSLocalizedString(@"Output:", @"PBGitXMessageSheet - task output header");
 			message = [message stringByAppendingString:@"\n"];
 			message = [message stringByAppendingString:taskError.userInfo[PBTaskTerminationOutputKey]];
 			[messageParts addObject:message];
-		} else {
-			[messageParts addObject:taskError.localizedDescription];
-			[messageParts addObject:taskError.localizedFailureReason];
 		}
 	}
 
