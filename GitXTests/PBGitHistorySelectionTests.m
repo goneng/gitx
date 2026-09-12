@@ -16,6 +16,7 @@
 @property (nonatomic, strong) GTOID *lastSelectedOID;
 - (GTOID *)OIDToReselect;
 - (void)restoreSelectionAfterUpdate;
+- (void)scrollToSelection;
 @end
 
 // The restore only reads OIDs off the commits, so it needs nothing of the real
@@ -35,8 +36,10 @@
 @end
 
 // The history list reaches for its table view once it actually moves the
-// selection, which a test has no nib for, so stop at the decision.
+// selection, which a test has no nib for, so stop at the decision and count
+// the scrolls it asks for.
 @interface PBStubHistoryController : PBGitHistoryController
+@property (nonatomic, assign) NSUInteger scrollCount;
 @end
 
 @implementation PBStubHistoryController
@@ -44,13 +47,18 @@
 {
 	return NO;
 }
+
+- (void)scrollToSelection
+{
+	self.scrollCount++;
+}
 @end
 
 static NSString *const kBranchTipSHA = @"8031ee6a0000000000000000000000000000beef";
 
 @interface PBGitHistorySelectionTests : XCTestCase
 @property (nonatomic, strong) PBGitRepository *repository;
-@property (nonatomic, strong) PBGitHistoryController *historyController;
+@property (nonatomic, strong) PBStubHistoryController *historyController;
 @end
 
 @implementation PBGitHistorySelectionTests
@@ -140,6 +148,36 @@ static NSString *const kBranchTipSHA = @"8031ee6a0000000000000000000000000000bee
 	[self.historyController restoreSelectionAfterUpdate];
 
 	XCTAssertEqualObjects([commits.selectedObjects.firstObject OID], [GTOID oidWithSHA:pickedSHA]);
+}
+
+- (void)testARestoredSelectionIsBroughtBackIntoView
+{
+	NSString *pickedSHA = @"c12df1e80000000000000000000000000000cafe";
+	NSArrayController *commits = [[NSArrayController alloc] init];
+	commits.avoidsEmptySelection = NO;
+	commits.content = @[ [PBStubCommit commitWithSHA:kBranchTipSHA], [PBStubCommit commitWithSHA:pickedSHA] ];
+	[commits setSelectedObjects:@[]];
+	[self.historyController setValue:commits forKey:@"commitController"];
+
+	self.historyController.lastSelectedOID = [GTOID oidWithSHA:pickedSHA];
+
+	[self.historyController restoreSelectionAfterUpdate];
+
+	XCTAssertEqual(self.historyController.scrollCount, 1u, @"a selection nobody can see is not a selection");
+}
+
+- (void)testASelectionThatWasNeverDroppedIsLeftWhereItIs
+{
+	NSArrayController *commits = [[NSArrayController alloc] init];
+	commits.content = @[ [PBStubCommit commitWithSHA:kBranchTipSHA] ];
+	[commits setSelectedObjects:commits.content];
+	[self.historyController setValue:commits forKey:@"commitController"];
+
+	self.historyController.lastSelectedOID = [GTOID oidWithSHA:kBranchTipSHA];
+
+	[self.historyController restoreSelectionAfterUpdate];
+
+	XCTAssertEqual(self.historyController.scrollCount, 0u, @"an update on its own is no reason to move the list under the user");
 }
 
 // A branch change outranks it: there the list is meant to move.
