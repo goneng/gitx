@@ -67,9 +67,12 @@ jobs:
       - name: Show openssl version
         run: |
           openssl version
+          # Remove any leftover config dirs first so `brew uninstall` finds
+          # nothing left behind and doesn't print its "have not been
+          # removed!" notices to the CI log.
+          rm -rf /usr/local/etc/openssl@1.1 /usr/local/etc/openssl@3
+          rm -rf /opt/homebrew/etc/openssl@1.1 /opt/homebrew/etc/openssl@3
           brew uninstall --ignore-dependencies openssl
-          rm -rf /usr/local/etc/openssl@3
-          rm -rf /usr/local/etc/openssl@1.1
           brew install openssl@3
           openssl version
       - name: pre build
