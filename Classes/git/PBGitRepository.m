@@ -606,6 +606,18 @@ NSString *const PBHookNameErrorKey = @"PBHookNameErrorKey";
 
 - (BOOL)ignoreFilePaths:(NSArray *)filePaths error:(NSError **)error
 {
+	@try {
+		return [self appendFilePathsToGitIgnore:filePaths error:error];
+	}
+	@catch (NSException *exception) {
+		NSString *failure = [NSString stringWithFormat:NSLocalizedString(@"The .gitignore file could not be written: %@", @""), exception.reason];
+
+		return PBReturnErrorWithUserInfo(error, NSLocalizedString(@"Ignoring the selected files failed", @""), failure, nil);
+	}
+}
+
+- (BOOL)appendFilePathsToGitIgnore:(NSArray *)filePaths error:(NSError **)error
+{
 	NSString *filesAsString = [filePaths componentsJoinedByString:@"\n"];
 
 	// Write to the file
@@ -621,7 +633,7 @@ NSString *const PBHookNameErrorKey = @"PBHookNameErrorKey";
 		if (!currentFile) return NO;
 
 		// Add a newline if not yet present
-		if ([currentFile characterAtIndex:([ignoreFile length] - 1)] != '\n')
+		if (currentFile.length > 0 && ![currentFile hasSuffix:@"\n"])
 			[currentFile appendString:@"\n"];
 		[currentFile appendString:filesAsString];
 
