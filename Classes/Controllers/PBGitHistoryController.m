@@ -242,6 +242,16 @@
 		return;
 
 	[commitController setSelectedObjects:commits];
+	[self scrollToSelection];
+}
+
+- (void)scrollToSelection
+{
+	NSUInteger row = commitController.selectionIndexes.firstIndex;
+	if (row == NSNotFound)
+		return;
+
+	[commitList scrollRowToVisible:row];
 }
 
 // Picking a branch in the sidebar is a request to look at that branch, so the
