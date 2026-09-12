@@ -13,6 +13,8 @@
 #import "PBTask.h"
 #import "PBChangedFile.h"
 
+#import <sys/stat.h>
+
 NSString *PBGitIndexIndexRefreshStatus = @"PBGitIndexIndexRefreshStatus";
 NSString *PBGitIndexIndexRefreshFailed = @"PBGitIndexIndexRefreshFailed";
 NSString *PBGitIndexFinishedIndexRefresh = @"PBGitIndexFinishedIndexRefresh";
@@ -54,6 +56,8 @@ NS_ENUM(NSUInteger, PBGitIndexOperation){
 	NSDictionary *_stagedChanges;
 	NSDictionary *_unstagedChanges;
 	NSDictionary *_untrackedChanges;
+	NSString *_diffCacheKey;
+	NSString *_diffCacheOutput;
 }
 
 @property (retain) NSDictionary *amendEnvironment;
@@ -670,7 +674,53 @@ NS_ENUM(NSUInteger, PBGitIndexOperation){
 }
 
 
+- (NSString *)fingerprintOfFileAtURL:(nullable NSURL *)url
+{
+	struct stat info;
+	if (!url.isFileURL || stat(url.path.fileSystemRepresentation, &info) != 0)
+		return @"absent";
+
+	return [NSString stringWithFormat:@"%lld.%ld.%ld",
+									  (long long)info.st_size,
+									  (long)info.st_mtimespec.tv_sec,
+									  (long)info.st_mtimespec.tv_nsec];
+}
+
+- (nullable NSString *)diffCacheKeyForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context
+{
+	NSURL *indexURL = self.repository.indexURL;
+	if (!indexURL)
+		return nil;
+
+	NSURL *fileURL = [self.repository.workingDirectoryURL URLByAppendingPathComponent:file.path];
+
+	return [NSString stringWithFormat:@"%@ %d %lu %d %@ %@ %@",
+									  file.path,
+									  staged,
+									  (unsigned long)context,
+									  (int)file.status,
+									  [self parentTree],
+									  [self fingerprintOfFileAtURL:fileURL],
+									  [self fingerprintOfFileAtURL:indexURL]];
+}
+
 - (NSString *)diffForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context
+{
+	NSString *cacheKey = [self diffCacheKeyForFile:file staged:staged contextLines:context];
+	if (cacheKey && [cacheKey isEqualToString:_diffCacheKey])
+		return _diffCacheOutput;
+
+	NSString *output = [self readDiffForFile:file staged:staged contextLines:context];
+
+	if (cacheKey && output) {
+		_diffCacheKey = cacheKey;
+		_diffCacheOutput = output;
+	}
+
+	return output;
+}
+
+- (NSString *)readDiffForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context
 {
 	NSString *parameter = [NSString stringWithFormat:@"-U%lu", context];
 	if (staged) {
